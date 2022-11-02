@@ -1,0 +1,162 @@
+---
+title: "Project Part 2"
+author: "Luke Johnson"
+fontsize: 12pt
+geometry: margin=1in
+urlcolor: black
+output: pdf_document
+header-includes:
+- \usepackage{setspace}
+- \onehalfspacing
+---
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/Users/lukejohnson/Desktop/STAT3080')
+```
+
+```{r, echo=FALSE, warning=FALSE,message = FALSE}
+## Data Cleaning
+
+
+library(ggplot2)
+library(dbplyr)
+
+## Transaction data
+all_transactions<-read.csv('/Users/lukejohnson/Desktop/STAT3080/all_transactions.csv')
+
+## Subset all the Stock asset type disclosures
+transactions<-all_transactions[all_transactions$asset_type %in% "Stock", ]
+
+## SP 500 data
+sp<-read.csv('/Users/lukejohnson/Desktop/STAT3080/constituents.csv')
+
+## Change sectors to the committee names
+library(dplyr)
+sp <- sp %>%
+    mutate(Sector = recode(Sector, "Information Technology" = "Commerce, Science, and Transportation","Financials"="Finance", "Communication" = "Commerce, Science, and Transportation", "Consumer Discretionary" = 'Commerce, Science, and Transportation',"Health Care"="Health, Education, Labor, and Pensions",'Consumer Staples'="Small Business and Entrepreneurship", 'Real Estate'="Banking, Housing, and Urban Affairs", 'Materials' = "Energy and Natural Resources", "Energy" = "Energy and Natural Resources", "Industrials" = "Energy and Natural Resources", "Utilities" = "Energy and Natural Resources" ))
+
+## Senate committees
+senatecomm<-read.csv('/Users/lukejohnson/Desktop/STAT3080/Senate_assignments_103-117.csv')
+
+## 117th session of congress
+senac<-senatecomm[senatecomm$Last.Update..May.12..2021 >= "117", ]
+names(senac)[4] <- "senator"
+
+## Rename To ticker
+names(sp)[1] <- "ticker"
+
+# First merger of data adding together SP500 data with all transaction data
+combo<-merge(transactions,sp,by='ticker')
+
+## Changing to last name, first name
+x <- combo$senator
+y <- as.person(x)
+s<-format(y, include=c("family","given"), braces=list(family=c("",",")))
+
+## Change sp column to correct name formatting
+combo$senator<-s
+
+## Merge combination of sp and senate transaction with senate committee's
+senators<- merge(combo,senac, by="senator")
+
+## Remove unnecessary columns
+senators_final<- senators[ -c(3,6:7,9:16,19:32,34:40) ]
+
+```
+
+### Introduction
+To prevent insider trading offenses, the SEC mandates quiet periods where company officials and those involved with a significant stock event, such as a split or an acquisition, are barred from trading. In addition to SEC mandates, the Sarbanes-Oxley Act, implemented after the great financial crisis in 2008, bars companies from allowing these forms of insider trading. Should Senators be above these laws?
+
+### Data Information and Cleaning Process
+Complete analysis of potential violations of the STOCK Act by members of the Senate requires compilation of all senators’ trades. These trades are made available from periodic transaction reports. We compiled these reports from sec.gov and the Harvard Dataverse, where the data had been previously collected from the specific data released by Congress and the SEC. In addition to the SEC data, we added S&P 500 data based on the industry sector. Then we grouped each stock on the S&P 500, compiled from the Standard & Poor's data index. We grouped their industry with the appropriate Senate committee where the company would fall under that Senate committee's jurisdiction. By doing this, we can directly compare Senate trades as the Senate trades are broken down by stocks that are broken down the same way the senators are grouped. By doing this, we can see how many senators trade stocks that would fall under their committee's jurisdiction. In this report, we deem trading in committee as insider trading as these elected officials have direct influence of the traded stock company’s industry. We also want to state that the results of this EDA are non-partisan, as this issue was discovered on both sides of the aisle.  
+
+This data represents the population of the 117th Congressional session which commenced January 3rd, 2021, and is still in session currently, which, when drafting this report, is October 28th, 2022. The rows reflect the senators' stock transactions, which they must report within 45 days of occurrence (SEC.gov). Senators may report multiple transactions at once, but they must specifically identify each company for which a transaction is reported. This allows the data to have rows with multiple of the same senators because they have numerous different transactions. The data itself had many relevant variables that could be applied by looking for further comparisons of the transaction reports; however, we narrowed these variables down to what we believed to be the eight most important. These variables include the Senator who made the stock trade, the ticker of the stock that was traded, and the stock owner, whether the spouse, child or Senator. The remaining variables in the data are the asset description, the amount traded in dollars, the actual company name, the sector in which the company falls, and the Senator's committee assignment. 
+
+### Exploratory Data Anlysis
+In attempting to answer the question “Do Senators make trades of stocks that fall under their specific committee's jurisdiction?”, much time was spent producing usable data. The data as initially found was not usable as one data set had the names of the senators listed as the first and last names. In contrast, the other data set had them listed as last name, first name, middle initial. Since the data was structured in such a way, we were unable to directly merge these two datasets without making sure the names were identically the same. We ensured the names were the same by replacing each name with its matching name in the other data, then changing all names to Last Name, First Name. Once this data was merged, the data needed to be merged with the S&P 500 information, which told us what the stock's industry was but didn't tell us what committee that stock would fall under. To directly compare and understand if senators are making stock trades in companies and in industries that fall under their committee's jurisdiction, we needed to group the stocks as if they were committee assignments.
+Several sectors had the potential to be grouped into several committees. However, the committee with the most significant influence on the sector was selected. Several committees have no industries that would fall under their committee's jurisdiction, and others have many that do.
+The committee on commerce science and transportation cover the information technology sector, the communication sector, and the consumer discretionary sector. The Senate Finance Committee has the financial sector under its jurisdiction, and the health, education, labor, and pension committee oversee the healthcare vertical. The energy and natural resources committee overseas industrials, utilities, energy, and materials sectors. The small business committee is responsible for consumer staples, and the banking, housing, and agricultural committees oversee real estate transactions. The data does not include exact dollar figures for the trades senators made nor the percentage return they made on that trade. We cannot directly compare whether the senators are beating the market odds. However, we can prove that senators are trading stocks of companies in the industries influenced by the committees on which they serve. This raises ethical and legal questions. 
+
+In an exploratory data analysis of our Senate transaction data, we find 28 senators who made trades that fell under their committee's jurisdiction. We also found one Senator who has not traded securities in a sector that his committee oversees. That Senator was Virginia's own Mark Warner. We analyzed the number of trades proportional to the trades senators make as a whole and found that many of the senators who trade stocks of companies in sectors influenced by their committee, are trading almost exclusively in those stocks. We decided this information would be best represented by attaching it to the name of the Senator who is responsible for the transaction. This information can be seen in the following data frame
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+## EDA of Senate Data
+
+### Grouping total set
+by_committee <- senators_final %>% group_by(X.14)
+senators_group<- by_committee%>%tally(sort=TRUE)
+senators_withcounts<-merge(senators_final,senators_group,by='X.14')
+
+## When Committee = Sector
+senators_insider <- senators_final[senators_final$Sector==senators_final$X.14, ]
+
+### Grouping how many insiders per committee
+by_committe_insider <- senators_insider%>% group_by(X.14)
+by_committe_insider_group <- by_committe_insider%>%tally(sort=TRUE)
+senate_insider_withcounts <-merge(senators_insider,by_committe_insider_group,by='X.14')
+
+## Assign Counts
+aa<-length(senators_final$senator)
+bb<-length(senators_insider$senator)
+cc<-length(unique(senators_final$senator))
+dd<-length(unique(senators_insider$senator))
+
+## Proportion of Senators who trade in congress that traded a stock in an industry their committee governs
+Propinsiders<-dd/cc
+
+## For Loop that finds the rate at which senators insider trade
+senators_names<-unique(senators_final$senator)
+rate<- numeric()
+for(i in 1:length(senators_names)){
+  senator <- subset(senators_final, senators_final$senator == senators_names[i])
+  committees<-unique(senators_final$X.14)
+  count <- 0
+  for (j in 1:length(committees)){
+    count <- count + sum(senator$Sector == committees[j])
+  }
+  rate<-c(rate,(count)/nrow(senator))
+}
+
+## Add Data set of just Rate and Names
+Rate_insider<-data.frame(unique(senators_names), rate)
+names(Rate_insider)[1] <- "senator"
+Rate_insider
+
+### full Data Frame
+
+senate_with_rate<-merge(senators_insider,Rate_insider, by= "senator")
+
+```
+
+### Findings
+Once we discovered the rate at which insider trading occurs among senators, we felt we should discover which committee is the most egregious in trading stocks of companies in sectors that fall under their jurisdiction. We decided to show this graphically with both a scatter plot and a box plot. The box plot shows the distribution of the rates in which senators in their specific committee are conducting these types of trades. By seeing this information, we can determine the average rates across a committee and the maximum trade rate in the committee. This information allows us to determine which Senate committee has members who on average have the highest rate of trades that raise these ethical and legal concerns. That committee is the Commerce, Science, and Transportation Committee. 
+We then shifted our focus to understanding the volume of this specific type of trading occurring during the 117th Congressional session. We created counts for Senate trading data by committee. We found that the Commerce, Science, and Transportation committee and the Health, Labor, Education, and Pension committee, better known as "HELP," were the two committees with senators whose trading volume was highest. Some of these committee's senators had 100% of their trades coincide with the jurisdiction of their respective committees.  
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Boxplot
+senate_with_rate$X.14 <- factor(senate_with_rate$X.14)
+bxplot <- ggplot(senate_with_rate, aes(x=rate, y=X.14)) 
+bxplot + geom_boxplot()+stat_summary(fun="mean", geom="point", shape=8, size=2) + labs(title="Rate that Committee's Insider Trade",
+                     x="Percentage of Insider Trades per Senator" , y="Senate Committee's")
+
+
+## Scatter
+by_committe_insider_group$X.14 <- factor(by_committe_insider_group$X.14)
+scatter<-ggplot(by_committe_insider_group,aes(x=n,y=X.14))
+scatter+geom_point()+labs(title="Insider Trades per Committee ",
+                     x="Count" , y="Senate Committee's with Found Insider Trading")
+
+```
+
+### Conclusion
+If a company is in an industry sector whose policy is set by a senate committee, why should a senator be able to own and trade that company’s stock? The information found has substantial implications for the ethical guidelines for senate committees. Showing that many senators make trades that could appear to be insider trading is of consequence as it implies that many senators could be committing wildly unethical acts. This information only bolsters the immediate need for a law banning congressional stock trading. When a committee in the Senate has direct control over the policy that affects a company in that industry, why should senators be able to insider trade when internal auditors, board members, consultants, and even individuals like Martha Stewart have served serious time in prison for such offenses. 
+
+\newpage
+## References
+<https://senatestockwatcher.com/api>
+<https://stackoverflow.com/questions/54640332/how-to-select-only-the-rows-that-have-a-certain-value-in-one-column-in-r>
+<https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/EQ6KC7>
+<https://dataverse.harvard.edu/file.xhtml?fileId=4640698&version=1.0>
+<https://SEC.gov>
+<https://stackoverflow.com/questions/66736264/how-do-i-rename-values-of-a-variable-in-r>
+<https://datahub.io/core/s-and-p-500-companies#readme>
+
